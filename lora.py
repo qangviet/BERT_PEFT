@@ -7,17 +7,6 @@ import torch.nn.functional as F
 
 
 class LinearLoRA(nn.Module):
-    """
-    A low-rank adapted linear layer. 
-
-    Args:
-        in_dim: int = An integer representing the input dimension of the linear layer 
-        out_dim: int = An integer representing the output dimension of the linear layer
-        r: int = An integer representing the rank of the low-rank approximated matrices
-        lora_alpha: int = An integer representing the numerator of the scaling constant alpha / r 
-        lora_dropout: float = A float between 0 and 1 representing the dropout probability      
-    """       
-    
     def __init__(
         self, 
         in_dim: int, 
@@ -59,14 +48,12 @@ class LinearLoRA(nn.Module):
     
     
 def freeze_model(model):
-    """Freezes all layers except the LoRa modules and classifier."""
     for name, param in model.named_parameters():
         if "lora" not in name and "classifier" not in name:
             param.requires_grad = False
 
             
 def create_lora(module, r, lora_dropout, lora_alpha):
-    """Converts a linear module to a LoRA linear module."""
     k, d = module.weight.shape  # pytorch nn.Linear weights are transposed, that is why shape is (k, d) and not (d, k)
     lora = LinearLoRA(d, k, r, lora_dropout=lora_dropout, lora_alpha=lora_alpha)
     with torch.no_grad():
@@ -83,18 +70,7 @@ def add_lora_layers(
     lora_dropout: float=0.1, 
     ignore_layers: List[int]=[]  
 ):
-    """
-        Replaces chosen linear modules with LoRA equivalents. 
-     
-        Args:
-            model: torch.nn.Module = The PyTorch model to be used
-            module_names: Tuple = A tuple containing the names of the linear layers to replace
-                Ex. ("query") to replace the linear modules with "query" in the name --> bert.encoder.layer.0.attention.self.query
-            r: int = 
-            lora_alpha: int = An integer representing the numerator of the scaling constant alpha / r 
-            lora_dropout: float = A float between 0 and 1 representing the dropout probability
-            ignore_layers: list = A list with the indices of all BERT layers NOT to add LoRA modules 
-        """                     
+             
     module_types: Tuple=(nn.Linear,)
     
     # disable dropout in frozen layers
@@ -113,13 +89,11 @@ def add_lora_layers(
                 
                 
 def unfreeze_model(model):
-    """Unfreezes all parameters in a model by setting requires_grad to True."""
     for name, param in model.named_parameters():
         param.requires_grad = True
 
         
 def create_linear(module):
-    """Converts a LoRA linear module back to a linear module."""
     k, d = module.pretrained.weight.shape  # pytorch nn.Linear weights are transposed, that is why variables are k, d and not d, k
     linear = nn.Linear(d, k, bias=True)
     
@@ -130,22 +104,10 @@ def create_linear(module):
     return linear
 
 
-def merge_lora_layers(model, module_names: Tuple=("query", "value"), dropout=0.1):
-    """
-        Replaces LoRA modules with their original linear equivalents. 
-   
-        Args:
-            model: torch.nn.Module = The PyTorch model to be used
-            module_names: Tuple = A tuple containing the names of the LoRA layers to replace
-                Ex. ("query") to replace the LoRA modules with "query" in the name --> bert.encoder.layer.0.attention.self.query
-            r: int = 
-            dropout: float = A float between 0 and 1 representing the dropout probability    
-        """                     
-    # enable dropout in frozen layers
+def merge_lora_layers(model, module_names: Tuple=("query", "value"), dropout=0.1):              
     for module in model.modules():
         if isinstance(module, nn.Dropout):
             module.p = dropout
-    # replace chosen linear modules with lora modules
     for name, module in model.named_children():
         if name in module_names and hasattr(module, "pretrained"):
             temp_linear = create_linear(module)
