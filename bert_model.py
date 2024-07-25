@@ -25,19 +25,42 @@ class BertEmbeddings(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.emb_size)
+        self.word_embeddings = nn.Embedding(config.vocab_size, config.emb_size, padding_idx=config.pad_token_id)
         self.position_embeddings = nn.Embedding(config.max_seq_len, config.emb_size)
         self.token_type_embeddings = nn.Embedding(2, config.emb_size)
         self.LayerNorm = nn.LayerNorm(config.emb_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.dropout)
+        self.register_buffer(
+            "position_ids", torch.arange(config.max_seq_len).expand((1, -1)), persistent=False
+        )
+        self.register_buffer(
+            "token_type_ids", torch.zeros(self.position_ids.size(), dtype=torch.long), persistent=False
+        )
     
-    def forward(self, input_ids, token_type_ids):
-        word_emb = self.word_embeddings(input_ids)
+    def forward(self, input_ids, token_type_ids, 
+                position_ids = None, inputs_embeds = None):
+        input_shape = input_ids.shape
+        
+        seq_length = input_shape[1]
+        
+        if position_ids is None:
+            position_ids = self.position_ids[:,0 : seq_length ]
+        
+        if token_type_ids is None:
+            if hasattr(self, "token_type_ids"):
+                buffered_token_type_ids = self.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+        if inputs_embeds is None:
+            word_emb = self.word_embeddings(input_ids)
+        else:
+            word_emb = inputs_embeds
         token_emb = self.token_type_embeddings(token_type_ids)
-        position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long, device=input_ids.device)
-        position_ids = position_ids.unsqueeze(0).expand(input_ids.size(0), input_ids.size(1))
-        pos_emb = self.position_embeddings(position_ids)
-        emb = word_emb + token_emb + pos_emb
+        position_emb = self.position_embeddings(position_ids)
+    
+        emb = word_emb + token_emb + position_emb    
         emb = self.LayerNorm(emb)
         emb = self.dropout(emb)
         
